@@ -13,7 +13,10 @@ type Block struct {
 	// 1. when the block is created
 	TimeStamp int64
 	// 2. information contained in the block
-	Data []byte
+	/*Data []byte*/
+
+	Transactions []*Transaction
+
 	// 3. the hash of pervious block ---用来遍历
 	PrevBlockHash []byte
 	// 4. the hash of the block
@@ -34,9 +37,9 @@ func (b *Block) SetHash() {
 }
 
 // creation of a block
-func NewBlock(data string, prevBlockHash []byte) *Block {
+func NewBlock(transactions []*Transaction, prevBlockHash []byte) *Block {
 	// init of a block
-	block := &Block{time.Now().Unix(), []byte(data), prevBlockHash, []byte{}, 0}
+	block := &Block{time.Now().Unix(), transactions, prevBlockHash, []byte{}, 0}
 	// when creating a new block, produce a pow for the block
 	pow := NewProofOfWork(block)
 	// get the hash less than pow.target
@@ -73,4 +76,18 @@ func DeserializeBlock(d []byte) *Block {
 	}
 
 	return &block
+}
+
+func(b *Block) HashTransactions() []byte {
+	var txHashes [][] byte
+	var txHash [32]byte
+
+	for _,tx:= range b.Transactions {
+		// 一个区块可能不止一个Transaction
+		txHashes = append(txHashes,tx.ID)
+	}
+
+	txHash = sha256.Sum256(bytes.Join(txHashes, []byte{}))
+	// 转成[]byte
+	return txHash[:]
 }

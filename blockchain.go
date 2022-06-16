@@ -1,20 +1,56 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/boltdb/bolt"
 	"log"
+	"os"
 )
 // 数据库名和表名
 const dbFile = "blockchain.db"
 const blocksBucket = "blocks"
-
+const genesisCoinbaseData = "2022/6/16 星期四 晴天 休班"
 type Blockchain struct {
 	// tip---the hash of the last block
 	tip []byte
 	// a DB connection
 	db *bolt.DB
 }
+
+func (bc *Blockchain) FindUnspentTransactions(address string) []Transaction{
+	var unspentTXs []Transaction
+	// 创建一个map,键是string，值是[]int
+	spentTXOs := make(map[string][]int)
+	bci := bc.Iterator()
+
+	for {
+		// 拿到每个block
+		block := bci.Next()
+		// 拿到block里的每个transaction
+		for _, tx := range block.Transactions {
+			txID := hex.EncodeToString(tx.ID)
+
+		// 拿到每个transaction里的output
+		for outIdx, out := range tx.Vout {
+			if spentTXOs[txID] != nil {
+				for _, spentOut := range spentTXOs[txID] {
+					if spentOut == outIdx {
+						continue Outputs
+				 }
+				}
+			}
+		}
+
+		if out.CanBeUnlockedWith(address) {
+
+		}
+
+
+		}
+	}
+}
+
 
 // BlockchainIterator is used to iterate over blockchain blocks
 type BlockchainIterator struct {
@@ -93,58 +129,81 @@ func (i *BlockchainIterator) Next() *Block {
 }
 
 // creation of the first block
-func NewGenesisBlock() *Block {
-	return NewBlock("Genesis Block", []byte{})
+func NewGenesisBlock(coinbase *Transaction) *Block {
+	return NewBlock([] *Transaction{coinbase}, []byte{})
 }
 
 
 // 1. 将创世区块(hash:serialize())和最后一个块的哈希(l:hash)，存储下来
-// init of a blockchain with genesis block
+// 返回新建好的区块链
 func NewBlockchain() *Blockchain {
+	if dbExists() == false {
+		fmt.Println("No existing blockchain found. Create one first.")
+		os.Exit(1)
+	}
 	var tip []byte
-	// open a boltdb file
 	db, err := bolt.Open(dbFile, 0600, nil)
 	if err != nil {
 		log.Panic(err)
 	}
 	err = db.Update(func(tx *bolt.Tx) error {
-		// 1. bucket storing our blocks
 		b := tx.Bucket([]byte(blocksBucket))
-		// 2.0 if bucket not exist
-		if b == nil {
-			fmt.Println("No existing blockchain found. Creating a new one...")
-			// 2.1 generate the genesis block
-			genesis := NewGenesisBlock()
-			// 2.2 create the bucket
-			b, err := tx.CreateBucket([]byte(blocksBucket))
-			if err != nil {
-				log.Panic(err)
-			}
-			// 2.3 store the genesis block
-			err = b.Put(genesis.Hash, genesis.Serialize())
-			if err != nil {
-				log.Panic(err)
-			}
-			// 2.4 [l:last block hash of the chain - genesis.Hash]
-			err = b.Put([]byte("l"), genesis.Hash)
-			if err != nil {
-				log.Panic(err)
-			}
-			tip = genesis.Hash
-		} else {
-			//
-
-			tip = b.Get([]byte("l"))
-		}
-
+		tip = b.Get([]byte("l"))
 		return nil
 	})
-
 	if err != nil {
 		log.Panic(err)
 	}
-
 	bc := Blockchain{tip, db}
-
 	return &bc
+}
+
+
+// create a blockchain in db
+// the address will receive the reward for mining the genesis block
+func CreateBlockchain(address string) *Blockchain {
+	if dbExists() {
+		fmt.Println("Blockchain already exists.")
+		os.Exit(1)
+	}
+	var tip []byte
+	db, err := bolt.Open(dbFile, 0600, nil)
+	if err != nil {
+		log.Panic(err)
+	}
+	err = db.Update(func(tx *bolt.Tx) error {
+		// 1. new coinbase transaction
+		cbtx := NewCoinbaseTX(address, genesisCoinbaseData)
+		// 2. new genesis Block
+		genesis := NewGenesisBlock(cbtx)
+		b, err := tx.CreateBucket([]byte(blocksBucket))
+		if err != nil {
+			log.Panic(err)
+		}
+		// 3.store geneis block
+		err = b.Put(genesis.Hash, genesis.Serialize())
+		if err != nil {
+			log.Panic(err)
+		}
+		// 4. store the hash of the last block
+		err = b.Put([]byte("l"), genesis.Hash)
+		if err != nil {
+			log.Panic(err)
+		}
+		tip = genesis.Hash
+		return nil
+	})
+	if err != nil {
+		log.Panic(err)
+	}
+	bc := Blockchain{tip, db}
+	return &bc
+}
+
+func dbExists() bool {
+	if _, err := os.Stat(dbFile); os.IsNotExist(err) {
+		return false
+	}
+
+	return true
 }
