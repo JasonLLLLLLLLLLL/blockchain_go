@@ -4,16 +4,24 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"log"
 )
+
 const subsidy = 10
+
 type Transaction struct {
 	ID []byte
 	// Inputs of a new transaction reference outputs of a previous transaction
 	Vin []TXInput
 	// Outputs are where coins are actually stored
 	Vout []TXOutput
+}
+
+// 看看是否满足coinbase的特征
+func (tx Transaction) IsCoinbase() bool {
+	return len(tx.Vin) == 1 && len(tx.Vin[0].Txid) == 0 && tx.Vin[0].Vout == -1
 }
 
 type TXOutput struct {
@@ -33,15 +41,19 @@ type TXInput struct {
 	// the mechanism that guarantees that users can't spend coins belonging to other people
 	ScriptSig string
 }
+
 // TODO: input 去解锁，能解开才可以将output引用为input
+// 我的钱
 func (in *TXInput) CanUnlockOutWith(unlockingData string) bool {
 	return in.ScriptSig == unlockingData
 }
+
 // TODO: Output  能否被解锁，这俩函数一个不就够了嘛
+// 别人转给我的钱
 func (out *TXOutput) CanBeUnlockedWith(unlockingData string) bool {
 	return out.ScriptPubLey == unlockingData
 }
-func NewCoinbaseTX(to, data string) * Transaction {
+func NewCoinbaseTX(to, data string) *Transaction {
 	if data == "" {
 		data = fmt.Sprintf("Reward to '%s'", to)
 	}
@@ -52,7 +64,7 @@ func NewCoinbaseTX(to, data string) * Transaction {
 	txout := TXOutput{subsidy, to}
 
 	tx := Transaction{nil, []TXInput{txin}, []TXOutput{txout}}
-	tx.setID()
+	tx.SetID()
 
 	return &tx
 }
@@ -74,9 +86,41 @@ func (tx *Transaction) SetID() {
 	tx.ID = hash[:]
 }
 
-
 // 一种通用的普通交易
-func NewUTXOTransaction(from, to string, amout int, bc *Blockchain) *Transaction {
-}
-// 找到所有的未花费输出，并且确定他们有足够的价值
+// a general transaction
+func NewUTXOTransaction(from, to string, amount int, bc *Blockchain) *Transaction {
+	var inputs []TXInput
+	var outputs []TXOutput
 
+	acc, validOutputs := bc.FindSpendableOutputs(from, amount)
+
+	if acc < amount {
+		log.Panic("ERROR: NOT enogh funds")
+	}
+
+	for txid, outs := range validOutputs {
+
+		txID, err := hex.DecodeString(txid)
+		if err != nil {
+			log.Fatal("Decode err")
+		}
+		// 把所有的outputs连起来作为输入
+		for _, out := range outs {
+			input := TXInput{txID, out, from}
+			inputs = append(inputs, input)
+		}
+	}
+	// 第一个out是给谁
+	outputs = append(outputs, TXOutput{amount, to})
+	// 还有多余的就找零
+	if acc > amount {
+		outputs = append(outputs, TXOutput{acc - amount, from})
+	}
+	// 打包成一个交易
+	tx := Transaction{nil, inputs, outputs}
+	tx.SetID()
+
+	return &tx
+}
+
+// 找到所有的未花费输出，并且确定他们有足够的价值

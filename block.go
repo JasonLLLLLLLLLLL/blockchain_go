@@ -29,7 +29,7 @@ func (b *Block) SetHash() {
 	// 1. int64 ->  str  -> []byte; in the given base of 10
 	timestamp := []byte(strconv.FormatInt(b.TimeStamp, 10))
 	// 2.concatenate elements of slices of slices tp get a slice
-	headers := bytes.Join([][]byte{b.PrevBlockHash, b.Data, timestamp}, []byte{})
+	headers := bytes.Join([][]byte{b.PrevBlockHash, b.HashTransactions(), timestamp}, []byte{})
 	// 3. returns the SHA256 checksum of the data.
 	hash := sha256.Sum256(headers)
 	// 4. reflect.TypeOf(hash[:]) ----> []byte
